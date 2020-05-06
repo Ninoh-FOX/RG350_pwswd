@@ -55,7 +55,8 @@ enum event_type {
 	brightup, brightdown,
 	sharpup, sharpdown,
 	mouse, tvout, screenshot,
-	kill, ratiomode, dpad, dpadmouse
+	kill, ratiomode, dpad, dpadmouse,
+	noanalog
 };
 
 struct button {

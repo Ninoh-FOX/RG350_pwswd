@@ -72,6 +72,7 @@ static struct {
 	  { ratiomode,	"RATIOMODE", },
 	  { dpad,		"DPAD", },
 	  { dpadmouse,	"DPADMOUSE", },
+	  { noanalog,   "NOANALOG", },
 };
 
 static void shortcut_free(struct shortcut *scuts)

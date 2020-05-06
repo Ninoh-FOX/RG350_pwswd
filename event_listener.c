@@ -109,13 +109,13 @@ static void switchmode(enum _mode new)
 }
 #else
 enum _mode {
-	NORMAL, MOUSE, HOLD, DPAD, DPADMOUSE
+	NORMAL, MOUSE, HOLD, DPAD, DPADMOUSE, NOANALOG
 };
 
 static enum _mode mode = NORMAL;
 
 static int event0 = -1, jevent0 = -1, uinput = -1;
-static bool grabbed, power_button_pressed, is_mouse = false, is_dpad = false;
+static bool grabbed, power_button_pressed, is_mouse = false, is_dpad = false; is_noanalog = false;
 static int epollfd = -1;
 
 static void switchmode(enum _mode new)
@@ -130,6 +130,7 @@ static void switchmode(enum _mode new)
 				case DPAD:
 				case MOUSE:
 				case DPADMOUSE:
+				case NOANALOG:
 					// enable read from joystick
 					{
 						struct epoll_event ev;
@@ -153,6 +154,7 @@ static void switchmode(enum _mode new)
 		case DPAD:
 		case MOUSE:
 		case DPADMOUSE:
+		case NOANALOG:
 			switch(new) {
 				case NORMAL:
 					// disable read from joystick
@@ -186,6 +188,7 @@ static void switchmode(enum _mode new)
 	}
 	is_dpad = mode == DPAD || mode == DPADMOUSE;
 	is_mouse = mode == MOUSE || mode == DPADMOUSE;
+	is_noanalog = mode == NOANALOG;
 }
 #endif
 
@@ -385,6 +388,15 @@ static void execute(enum event_type event, int value)
 			else 
 				switchmode(DPADMOUSE);
 			break;
+		case noanalog:
+			if (value != 1) return;
+			str = "noanalog";
+			if (mode == NOANALOG)
+				switchmode(NORMAL);
+			else 
+				switchmode(NOANALOG);
+			break;
+			
 #ifdef BACKEND_TVOUT
 		case tvout:
 			if (value != 1) return;
@@ -1123,7 +1135,6 @@ int do_listen(const char *event, const char *jevent, const char *uinput)
 				}
 			}
 
-
 #ifdef _rg350
 			// 
 			if(is_mouse && jread && my_jevent.value != 0) {
@@ -1169,7 +1180,7 @@ int do_listen(const char *event, const char *jevent, const char *uinput)
 				}
 
 			}
-
+			
 #endif
 #ifdef _pg2
 				// 
@@ -1223,6 +1234,53 @@ int do_listen(const char *event, const char *jevent, const char *uinput)
 				inject(EV_REL, REL_X, mouse_x);
 			inject(EV_SYN, SYN_REPORT, 0); 
 		}
+		
+#ifdef _pg2			
+			if (is_noanalog) {
+
+			// We don't want to move the analog if the power button is pressed.
+			if (power_button_pressed)
+				continue;
+
+			// An event occured
+			if (eread) {
+				unsigned int i;
+
+				// Toggle the "value" flag of the button object
+				for (i = 0; i < nb_buttons; i++) {
+					if (buttons[i].id == my_event.code)
+						buttons[i].state = my_event.value;
+				}
+
+				switch(my_event.code) {
+                    case BUTTON_UP:
+					case BUTTON_DOWN:
+					case BUTTON_LEFT:
+					case BUTTON_RIGHT:
+					case BUTTON_X:
+					case BUTTON_Y:
+					case BUTTON_A:
+					case BUTTON_B:
+					case BUTTON_L1:
+					case BUTTON_R1:
+					case BUTTON_L2:
+					case BUTTON_R2:
+					case BUTTON_MENU:
+					case BUTTON_START:
+					case BUTTON_SELECT:
+						
+						// If the event is not analog, we reinject it.
+						inject(EV_KEY, my_event.code, my_event.value);
+						inject(EV_SYN, SYN_REPORT, 0);
+						continue;
+						
+					default:
+						continue;
+				}
+			}
+		}
+#endif
+		
 	}
 
 	return -1;
