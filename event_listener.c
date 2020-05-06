@@ -1178,7 +1178,7 @@ int do_listen(const char *event, const char *jevent, const char *uinput)
 				// If it is pressed, we inject an event with the corresponding mouse movement.
 
 			switch(my_jevent.code) {
-				case 3: {
+				case 0: {
 						if(my_jevent.value < AXIS_ZERO_0 - DEAD_ZONE) {
 							if (my_jevent.value < AXIS_ZERO_0 - DEAD_ZONE - SLOW_MOUSE_ZONE)
 								mouse_x = 0-5; 
@@ -1194,7 +1194,7 @@ int do_listen(const char *event, const char *jevent, const char *uinput)
 						}
 						break;
 					}
-				case 4: {
+				case 1: {
 						if(my_jevent.value < AXIS_ZERO_1 - DEAD_ZONE) {
 							if (my_jevent.value < AXIS_ZERO_1 - DEAD_ZONE - SLOW_MOUSE_ZONE)
 								mouse_y = 0-5; 

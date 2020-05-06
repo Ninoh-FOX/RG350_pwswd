@@ -28,6 +28,8 @@ struct button buttons[] = {
 #else
 	_BUTTON(L1),
 	_BUTTON(R1),
+	_BUTTON(L2),
+	_BUTTON(R2),
 #endif
 	_BUTTON(SELECT),
 	_BUTTON(START),
@@ -40,6 +42,9 @@ struct button buttons[] = {
 #ifdef _rg350
 	_BUTTON(L3),
 	_BUTTON(R3),
+#endif
+#ifdef _pg2
+	_BUTTON(MENU),
 #endif
 	
 };
