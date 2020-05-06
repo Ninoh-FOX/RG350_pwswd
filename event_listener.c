@@ -9,7 +9,18 @@
 
 #include "event_listener.h"
 #include "shortcut_handler.h"
-#include "backend/backends.h"
+
+#define CONFIG_PLATAFORM
+
+#ifdef _def
+#include "backend_def/backends.h"
+#ifdef _rg350
+#include "backend_rg350/backends.h"
+#ifdef _pg2
+#include "backend_pg2/backends.h"
+#endif
+#endif
+#endif
 
 #ifdef DEBUG
 #define DEBUGMSG(msg...) printf(msg)
@@ -23,12 +34,18 @@
 #define POWEROFF_TIMEOUT 3
 #endif
 
+
+#ifdef _def
+#else
 #define DEAD_ZONE		450
 #define SLOW_MOUSE_ZONE		600
-#define AXIS_ZERO_0		1730
-#define AXIS_ZERO_1		1730
+#define AXIS_ZERO_0		1620
+#define AXIS_ZERO_1		1620
+#endif
+#ifdef _rg350
 #define AXIS_ZERO_3		1620
 #define AXIS_ZERO_4		1620
+#endif
 
 #if (POWEROFF_TIMEOUT > 0)
 #include <pthread.h>
@@ -41,6 +58,56 @@ static struct uinput_user_dev uud = {
 	.id = { BUS_USB, 1,1,1 },
 };
 
+#ifdef _def
+enum _mode {
+	NORMAL, MOUSE, HOLD
+};
+
+static enum _mode mode = NORMAL;
+
+static FILE *event0, *uinput;
+static bool grabbed, power_button_pressed;
+
+static void switchmode(enum _mode new)
+{
+	if (new == mode) return;
+
+	switch(mode) {
+		case NORMAL:
+			switch(new) {
+				case MOUSE:
+					// Enable non-blocking reads: we won't have to wait for an
+					// event to process mouse emulation.
+					if (fcntl(fileno(event0), F_SETFL, O_NONBLOCK) == -1)
+						perror(__func__);
+					grabbed = true;
+					break;
+				case HOLD:
+					grabbed = true;
+					blank(1);
+				default:
+					break;
+			}
+			mode = new;
+			break;
+		case MOUSE:
+			// Disable non-blocking reads.
+			if (fcntl(fileno(event0), F_SETFL, 0) == -1)
+				perror(__func__);
+		case HOLD:
+			switch(new) {
+				case NORMAL:
+					grabbed = false;
+				default:
+					mode = new;
+					blank(0);
+					return;
+			}
+		default:
+			break;
+	}
+}
+#else
 enum _mode {
 	NORMAL, MOUSE, HOLD, DPAD, DPADMOUSE
 };
@@ -120,8 +187,104 @@ static void switchmode(enum _mode new)
 	is_dpad = mode == DPAD || mode == DPADMOUSE;
 	is_mouse = mode == MOUSE || mode == DPADMOUSE;
 }
+#endif
 
-
+#ifdef _def
+static void execute(enum event_type event, int value)
+{
+	char *str = NULL;
+	switch(event) {
+#ifdef BACKEND_REBOOT
+		case reboot:
+			if (value != 1) return;
+			str = "reboot";
+			do_reboot();
+			break;
+#endif
+#ifdef BACKEND_POWEROFF
+		case poweroff:
+			if (value == 2) return;
+			str = "poweroff";
+			do_poweroff();
+			break;
+#endif
+#ifdef BACKEND_SUSPEND
+		case suspend:
+			if (value != 1) return;
+			str = "suspend";
+			do_suspend();
+			break;
+#endif
+		case hold:
+			if (value != 1) return;
+			str = "hold";
+			if (mode == HOLD)
+				switchmode(NORMAL);
+			else
+				switchmode(HOLD);
+			break;
+#ifdef BACKEND_VOLUME
+		case volup:
+			str = "volup";
+			vol_up(value);
+			break;
+		case voldown:
+			str = "voldown";
+			vol_down(value);
+			break;
+#endif
+#ifdef BACKEND_BRIGHTNESS
+		case brightup:
+			str = "brightup";
+			bright_up(value);
+			break;
+		case brightdown:
+			str = "brightdown";
+			bright_down(value);
+			break;
+#endif
+		case mouse:
+			if (value != 1) return;
+			str = "mouse";
+			if (mode == MOUSE)
+				switchmode(NORMAL);
+			else
+				switchmode(MOUSE);
+			break;
+#ifdef BACKEND_TVOUT
+		case tvout:
+			if (value != 1) return;
+			str = "tvout";
+			tv_out();
+			break;
+#endif
+#ifdef BACKEND_SCREENSHOT
+		case screenshot:
+			if (value != 1) return;
+			str = "screenshot";
+			do_screenshot();
+			break;
+#endif
+#ifdef BACKEND_KILL
+		case kill:
+			if (value != 1) return;
+			str = "kill";
+			do_kill();
+			break;
+#endif
+#ifdef BACKEND_RATIOMODE
+		case ratiomode:
+			if (value != 1) return;
+			str = "ratiomode";
+			do_change_ratiomode();
+			break;
+#endif
+		default:
+			return;
+	}
+	DEBUGMSG("Execute: %s.\n", str);
+}
+#else
 static void execute(enum event_type event, int value)
 {
 	char *str = NULL;
@@ -190,7 +353,6 @@ static void execute(enum event_type event, int value)
 			sharp_down(value);
 			break;
 #endif
-
 		case mouse:
 			if (value != 1) return;
 			str = "mouse";
@@ -256,8 +418,58 @@ static void execute(enum event_type event, int value)
 	}
 	DEBUGMSG("Execute: %s.\n", str);
 }
+#endif
 
+#ifdef _def
+static int open_fds(const char *event0fn, const char *uinputfn)
+{
+	event0 = fopen(event0fn, "r");
+	if (!event0) {
+		perror("opening event0");
+		return -1;
+	}
 
+	uinput = fopen(uinputfn, "r+");
+	if (!uinput) {
+		perror("opening uinput");
+		return -1;
+	}
+
+	int fd = fileno(uinput);
+	write(fd, &uud, sizeof(uud));
+
+	if (ioctl(fd, UI_SET_EVBIT, EV_KEY) == -1) goto filter_fail;
+	if (ioctl(fd, UI_SET_KEYBIT, BTN_LEFT) == -1) goto filter_fail;
+	if (ioctl(fd, UI_SET_KEYBIT, BTN_MIDDLE) == -1) goto filter_fail;
+	if (ioctl(fd, UI_SET_KEYBIT, BTN_RIGHT) == -1) goto filter_fail;
+
+	if (ioctl(fd, UI_SET_KEYBIT, BUTTON_X) == -1) goto filter_fail;
+	if (ioctl(fd, UI_SET_KEYBIT, BUTTON_Y) == -1) goto filter_fail;
+	if (ioctl(fd, UI_SET_KEYBIT, BUTTON_L) == -1) goto filter_fail;
+	if (ioctl(fd, UI_SET_KEYBIT, BUTTON_R) == -1) goto filter_fail;
+	if (ioctl(fd, UI_SET_KEYBIT, BUTTON_START) == -1) goto filter_fail;
+	if (ioctl(fd, UI_SET_KEYBIT, BUTTON_SELECT) == -1) goto filter_fail;
+	if (ioctl(fd, UI_SET_KEYBIT, BUTTON_POWER) == -1) goto filter_fail;
+
+	if (ioctl(fd, UI_SET_EVBIT, EV_REL) == -1) goto filter_fail;
+	if (ioctl(fd, UI_SET_RELBIT, REL_X) == -1) goto filter_fail;
+	if (ioctl(fd, UI_SET_RELBIT, REL_Y) == -1) goto filter_fail;
+	if (ioctl(fd, UI_SET_RELBIT, REL_WHEEL) == -1) goto filter_fail;
+
+	if (ioctl(fd, UI_SET_KEYBIT, BTN_MOUSE) == -1) goto filter_fail;
+
+	if (ioctl(fd, UI_DEV_CREATE)) {
+		perror("creating device");
+		return -1;
+	}
+
+	return 0;
+
+filter_fail:
+	perror("setting event filter bits");
+	return -1;
+}
+#else
 static int open_fds(const char *event0fn, const char *jeventfn, const char *uinputfn)
 {
 	event0 = open(event0fn, O_RDONLY | O_NONBLOCK);
@@ -278,6 +490,7 @@ static int open_fds(const char *event0fn, const char *jeventfn, const char *uinp
 		return -1;
 	}
 
+	
 	int fd = uinput;
 	write(fd, &uud, sizeof(uud));
 
@@ -295,10 +508,15 @@ static int open_fds(const char *event0fn, const char *jeventfn, const char *uinp
 	if (ioctl(fd, UI_SET_KEYBIT, BUTTON_R1) == -1) goto filter_fail;
 	if (ioctl(fd, UI_SET_KEYBIT, BUTTON_L2) == -1) goto filter_fail;
 	if (ioctl(fd, UI_SET_KEYBIT, BUTTON_R2) == -1) goto filter_fail;
+#ifdef _rg350
 	if (ioctl(fd, UI_SET_KEYBIT, BUTTON_L3) == -1) goto filter_fail;
 	if (ioctl(fd, UI_SET_KEYBIT, BUTTON_R3) == -1) goto filter_fail;
+#endif
 	if (ioctl(fd, UI_SET_KEYBIT, BUTTON_START) == -1) goto filter_fail;
 	if (ioctl(fd, UI_SET_KEYBIT, BUTTON_SELECT) == -1) goto filter_fail;
+#ifdef _pg2
+	if (ioctl(fd, UI_SET_KEYBIT, BUTTON_MENU) == -1) goto filter_fail;
+#endif
 	if (ioctl(fd, UI_SET_KEYBIT, BUTTON_POWER) == -1) goto filter_fail;
 	if (ioctl(fd, UI_SET_KEYBIT, BUTTON_VOLUP) == -1) goto filter_fail;
 	if (ioctl(fd, UI_SET_KEYBIT, BUTTON_VOLDOWN) == -1) goto filter_fail;
@@ -324,14 +542,14 @@ static int open_fds(const char *event0fn, const char *jeventfn, const char *uinp
 	ev.events = EPOLLIN;
 	ev.data.fd = event0;
 	epoll_ctl(epollfd, EPOLL_CTL_ADD, event0, &ev);
-
+	
 	return 0;
 
 filter_fail:
 	perror("setting event filter bits");
 	return -1;
 }
-
+#endif
 
 static int inject(unsigned short type, unsigned short code, int value)
 {
@@ -343,7 +561,11 @@ static int inject(unsigned short type, unsigned short code, int value)
 	inject_event.code = code;
 	inject_event.time.tv_sec = time(0);
 	inject_event.time.tv_usec = 0;
+#ifdef _def
+	return write(fileno(uinput), &inject_event, sizeof(struct input_event));
+#else
 	return write(uinput, &inject_event, sizeof(struct input_event));
+#endif
 }
 
 
@@ -398,6 +620,242 @@ bool power_button_is_pressed(void)
 	return power_button_pressed;
 }
 
+#ifdef _def
+int do_listen(const char *event, const char *uinput)
+{
+	if (open_fds(event, uinput))
+		return -1;
+
+	const struct shortcut *tmp;
+	const struct shortcut *shortcuts = getShortcuts();
+
+#if (POWEROFF_TIMEOUT > 0)
+	bool with_poweroff_timeout = true;
+	struct poweroff_thd_args *args;
+
+	/* If a poweroff combo exist, don't activate the shutdown
+	 * on timeout feature */
+	for (tmp = shortcuts; tmp; tmp = tmp->prev)
+		if (tmp->action == poweroff) {
+			with_poweroff_timeout = false;
+			break;
+		}
+
+	if (with_poweroff_timeout) {
+		args = malloc(sizeof(*args));
+
+		if (!args) {
+			fprintf(stderr, "Unable to allocate memory\n");
+			with_poweroff_timeout = false;
+		} else {
+			pthread_t thd;
+
+			pthread_mutex_init(&args->mutex, NULL);
+			pthread_mutex_init(&args->mutex2, NULL);
+			pthread_mutex_lock(&args->mutex);
+
+			pthread_create(&thd, NULL, poweroff_thd, args);
+		}
+	}
+#endif
+
+	bool combo_used = false;
+
+	while(1) {
+		// We wait for an event.
+		// On mouse mode, this call does not block.
+		struct input_event my_event;
+		int read = fread(&my_event, sizeof(struct input_event), 1, event0);
+
+		// If we are on "mouse" mode and nothing has been read, let's wait for a bit.
+		if (mode == MOUSE && !read)
+			usleep(10000);
+
+		if (read) {
+			// If the power button is pressed, block inputs (if it wasn't already blocked)
+			if (my_event.code == EVENT_SWITCH_POWER) {
+
+				// We don't want key repeats on the power button.
+				if (my_event.value == 2)
+					continue;
+
+				DEBUGMSG("(un)grabbing.\n");
+				power_button_pressed = !!my_event.value;
+
+				if (!power_button_pressed) {
+					// Send release events to all active combos.
+					for (tmp = shortcuts; tmp; tmp = tmp->prev) {
+						bool was_combo = true;
+						unsigned int i;
+						for (i = 0; i < tmp->nb_keys; i++) {
+							struct button *button = tmp->keys[i];
+							was_combo &= !!button->state;
+							button->state = 0;
+						}
+						if (was_combo)
+							execute(tmp->action, 0);
+					}
+
+					if (!combo_used) {
+						DEBUGMSG("No combo used, injecting BUTTON_POWER\n");
+						inject(EV_KEY, BUTTON_POWER, 1);
+						inject(EV_KEY, BUTTON_POWER, 0);
+						inject(EV_SYN, SYN_REPORT, 0);
+					}
+
+					combo_used = false;
+				}
+
+#if (POWEROFF_TIMEOUT > 0)
+				if (with_poweroff_timeout) {
+					if (power_button_pressed) {
+						struct timeval tv;
+
+						gettimeofday(&tv, NULL);
+						args->timeout = (tv.tv_sec + POWEROFF_TIMEOUT)
+									* 1000000 + tv.tv_usec;
+						args->canceled = 0;
+						if (!pthread_mutex_trylock(&args->mutex2))
+							pthread_mutex_unlock(&args->mutex);
+					} else {
+						DEBUGMSG("Power button released: canceling poweroff\n");
+						args->canceled = 1;
+					}
+				}
+#endif
+
+				if (!grabbed) {
+					if (ioctl(fileno(event0), EVIOCGRAB, power_button_pressed)
+							== -1)
+						perror(__func__);
+				}
+				continue;
+			}
+
+
+			// If the power button is currently pressed, we enable shortcuts.
+			if (power_button_pressed) {
+				for (tmp = shortcuts; tmp; tmp = tmp->prev) {
+					bool was_combo = true, is_combo = true, match = false;
+					unsigned int i;
+					for (i = 0; i < tmp->nb_keys; i++) {
+						struct button *button = tmp->keys[i];
+						was_combo &= !!button->state;
+						if (my_event.code == button->id) {
+							match = 1;
+							button->state = (my_event.value != 0);
+						}
+						is_combo &= button->state;
+					}
+
+					if (match && (was_combo || is_combo)) {
+#if (POWEROFF_TIMEOUT > 0)
+						if (with_poweroff_timeout) {
+							DEBUGMSG("Combo: canceling poweroff\n");
+							args->canceled = 1;
+						}
+#endif
+						combo_used = true;
+						execute(tmp->action, my_event.value);
+					}
+				}
+				continue;
+			}
+		}
+
+		// In case we are in the "mouse" mode, handle mouse emulation.
+		if (mode == MOUSE) {
+
+			// We don't want to move the mouse if the power button is pressed.
+			if (power_button_pressed)
+				continue;
+
+			// An event occured
+			if (read) {
+				unsigned int i;
+
+				// Toggle the "value" flag of the button object
+				for (i = 0; i < nb_buttons; i++) {
+					if (buttons[i].id == my_event.code)
+						buttons[i].state = my_event.value;
+				}
+
+				switch(my_event.code) {
+					case BUTTON_A:
+						if (my_event.value == 2) /* Disable repeat on mouse buttons */
+							continue;
+
+						inject(EV_KEY, BTN_LEFT, my_event.value);
+						inject(EV_SYN, SYN_REPORT, 0);
+						continue;
+
+					case BUTTON_B:
+						if (my_event.value == 2) /* Disable repeat on mouse buttons */
+							continue;
+
+						inject(EV_KEY, BTN_RIGHT, my_event.value);
+						inject(EV_SYN, SYN_REPORT, 0);
+						continue;
+
+					case BUTTON_X:
+					case BUTTON_Y:
+					case BUTTON_L:
+					case BUTTON_R:
+					case BUTTON_START:
+					case BUTTON_SELECT:
+
+						// If the event is not mouse-related, we reinject it.
+						inject(EV_KEY, my_event.code, my_event.value);
+						continue;
+
+					default:
+						continue;
+				}
+			}
+
+			// No event this time
+			else {
+				// For each direction of the D-pad, we check the state of the corresponding button.
+				// If it is pressed, we inject an event with the corresponding mouse movement.
+				unsigned int i;
+				for (i = 0; i < nb_buttons; i++) {
+					unsigned short code;
+					int value;
+
+					if (!buttons[i].state)
+						continue;
+
+					switch(buttons[i].id) {
+						case BUTTON_LEFT:
+							code = REL_X;
+							value = -5;
+							break;
+						case BUTTON_RIGHT:
+							code = REL_X;
+							value = 5;
+							break;
+						case BUTTON_DOWN:
+							code = REL_Y;
+							value = 5;
+							break;
+						case BUTTON_UP:
+							code = REL_Y;
+							value = -5;
+							break;
+						default:
+							continue;
+					}
+
+					inject(EV_REL, code, value);
+					inject(EV_SYN, SYN_REPORT, 0);
+				}
+			}
+		}
+	}
+
+	return -1;
+}
+#else
 int do_listen(const char *event, const char *jevent, const char *uinput)
 {
 #define MAX_EVENTS 2
@@ -645,10 +1103,15 @@ int do_listen(const char *event, const char *jevent, const char *uinput)
 					case BUTTON_B:
 					case BUTTON_L1:
 					case BUTTON_R1:
+#ifdef _rg350
 					case BUTTON_L3:
 					case BUTTON_R3:
+#endif
 					case BUTTON_START:
 					case BUTTON_SELECT:
+#ifdef _pg2
+					case BUTTON_MENU:
+#endif
 
 						// If the event is not mouse-related, we reinject it.
 						inject(EV_KEY, my_event.code, my_event.value);
@@ -660,13 +1123,13 @@ int do_listen(const char *event, const char *jevent, const char *uinput)
 				}
 			}
 
+
+#ifdef _rg350
 			// 
 			if(is_mouse && jread && my_jevent.value != 0) {
 				// For each direction of the D-pad, we check the state of the corresponding button.
 				// If it is pressed, we inject an event with the corresponding mouse movement.
-
-
-				
+		
 				switch(my_jevent.code) {
 					case 3: {
 						if(my_jevent.value < AXIS_ZERO_3 - DEAD_ZONE) {
@@ -706,6 +1169,54 @@ int do_listen(const char *event, const char *jevent, const char *uinput)
 				}
 
 			}
+
+#endif
+#ifdef _pg2
+				// 
+			if(is_mouse && jread && my_jevent.value != 0) {
+				// For each direction of the D-pad, we check the state of the corresponding button.
+				// If it is pressed, we inject an event with the corresponding mouse movement.
+
+			switch(my_jevent.code) {
+				case 3: {
+						if(my_jevent.value < AXIS_ZERO_0 - DEAD_ZONE) {
+							if (my_jevent.value < AXIS_ZERO_0 - DEAD_ZONE - SLOW_MOUSE_ZONE)
+								mouse_x = 0-5; 
+							else
+								mouse_x = 0-1; 
+						} else if (my_jevent.value > AXIS_ZERO_0 + DEAD_ZONE) {
+							if (my_jevent.value > AXIS_ZERO_0 + DEAD_ZONE + SLOW_MOUSE_ZONE)
+								mouse_x = 5; 
+							else
+								mouse_x = 1; 
+						} else {
+							mouse_x = 0;
+						}
+						break;
+					}
+				case 4: {
+						if(my_jevent.value < AXIS_ZERO_1 - DEAD_ZONE) {
+							if (my_jevent.value < AXIS_ZERO_1 - DEAD_ZONE - SLOW_MOUSE_ZONE)
+								mouse_y = 0-5; 
+							else
+								mouse_y = 0-1; 
+						} else if (my_jevent.value > AXIS_ZERO_1 + DEAD_ZONE) {
+							if (my_jevent.value > AXIS_ZERO_1 + DEAD_ZONE + SLOW_MOUSE_ZONE)
+								mouse_y = 5; 
+							else
+								mouse_y = 1; 
+						} else {
+							mouse_y = 0;
+						}
+						break;
+					default:
+						break;
+					}
+
+				}
+
+			}
+#endif
 			if (mouse_y != 0)
 				inject(EV_REL, REL_Y, mouse_y);
 			if (mouse_x != 0)
@@ -716,3 +1227,4 @@ int do_listen(const char *event, const char *jevent, const char *uinput)
 
 	return -1;
 }
+#endif

@@ -11,59 +11,61 @@ CC = $(CROSS_COMPILE)gcc
 
 DEFAULT_MIXER ?= "\"PCM\""
 
+CONFIG_PLATAFORM ?= _def
+
 LIBS = -lini -lpthread
 OBJS = event_listener.o shortcut_handler.o main.o
 
 ifdef BACKEND_VOLUME
-	OBJS += backend/volume/volume.o
+	OBJS += backend$(CONFIG_PLATAFORM)/volume/volume.o
 	CFLAGS += -DBACKEND_VOLUME -DDEFAULT_MIXER=$(DEFAULT_MIXER)
 	LIBS += -lasound
 endif
 
 ifdef BACKEND_BRIGHTNESS
-	OBJS += backend/brightness/brightness.o
+	OBJS += backend$(CONFIG_PLATAFORM)/brightness/brightness.o
 	CFLAGS += -DBACKEND_BRIGHTNESS
 endif
 
 ifdef BACKEND_SHARPNESS
-	OBJS += backend/sharpness/sharpness.o
+	OBJS += backend$(CONFIG_PLATAFORM)/sharpness/sharpness.o
 	CFLAGS += -DBACKEND_SHARPNESS
 endif
 
 
 ifdef BACKEND_POWEROFF
-	OBJS += backend/poweroff/poweroff.o
+	OBJS += backend$(CONFIG_PLATAFORM)/poweroff/poweroff.o
 	CFLAGS += -DBACKEND_POWEROFF
 endif
 
 ifdef BACKEND_REBOOT
-	OBJS += backend/reboot/reboot.o
+	OBJS += backend$(CONFIG_PLATAFORM)/reboot/reboot.o
 	CFLAGS += -DBACKEND_REBOOT
 endif
 
 ifdef BACKEND_SCREENSHOT
-	OBJS += backend/screenshot/screenshot.o
+	OBJS += backend$(CONFIG_PLATAFORM)/screenshot/screenshot.o
 	CFLAGS += -DBACKEND_SCREENSHOT
 	LIBS += -lpng
 endif
 
 ifdef BACKEND_TVOUT
-	OBJS += backend/tvout/tvout.o
+	OBJS += backend$(CONFIG_PLATAFORM)/tvout/tvout.o
 	CFLAGS += -DBACKEND_TVOUT
 endif
 
 ifdef BACKEND_SUSPEND
-	OBJS += backend/suspend/suspend.o
+	OBJS += backend$(CONFIG_PLATAFORM)/suspend/suspend.o
 	CFLAGS += -DBACKEND_SUSPEND
 endif
 
 ifdef BACKEND_KILL
-	OBJS += backend/kill/kill.o
+	OBJS += backend$(CONFIG_PLATAFORM)/kill/kill.o
 	CFLAGS += -DBACKEND_KILL
 endif
 
 ifdef BACKEND_RATIOMODE
-	OBJS += backend/ratiomode/ratiomode.o
+	OBJS += backend$(CONFIG_PLATAFORM)/ratiomode/ratiomode.o
 	CFLAGS += -DBACKEND_RATIOMODE
 endif
 

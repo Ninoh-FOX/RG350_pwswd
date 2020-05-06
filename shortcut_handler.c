@@ -22,15 +22,25 @@ struct button buttons[] = {
 	_BUTTON(B),
 	_BUTTON(X),
 	_BUTTON(Y),
+#ifdef _def
+	_BUTTON(L),
+	_BUTTON(R),
+#else
 	_BUTTON(L1),
 	_BUTTON(R1),
+#endif
 	_BUTTON(SELECT),
 	_BUTTON(START),
 	_BUTTON(HOLD),
+#ifdef _def
+#else
 	_BUTTON(VOLUP),
 	_BUTTON(VOLDOWN),
+#endif
+#ifdef _rg350
 	_BUTTON(L3),
 	_BUTTON(R3),
+#endif
 	
 };
 
@@ -48,15 +58,15 @@ static struct {
 	  { voldown,	"VOLUME_DOWN", },
 	  { brightup,	"BRIGHTNESS_UP", },
 	  { brightdown,	"BRIGHTNESS_DOWN", },
-	  { sharpup, "SHARPNESS_UP",},
-	  { sharpdown, "SHARPNESS_DOWN",},
+	  { sharpup, 	"SHARPNESS_UP",},
+	  { sharpdown, 	"SHARPNESS_DOWN",},
 	  { mouse,		"MOUSE_EMULATION", },
 	  { tvout,		"TV_OUT", },
 	  { screenshot,	"SCREENSHOT", },
 	  { kill,		"KILL", },
-	  { ratiomode,          "RATIOMODE", },
-	  { dpad,          "DPAD", },
-	  { dpadmouse,          "DPADMOUSE", },
+	  { ratiomode,	"RATIOMODE", },
+	  { dpad,		"DPAD", },
+	  { dpadmouse,	"DPADMOUSE", },
 };
 
 static void shortcut_free(struct shortcut *scuts)

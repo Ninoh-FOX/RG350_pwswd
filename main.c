@@ -8,7 +8,18 @@
 
 #include "shortcut_handler.h"
 #include "event_listener.h"
-#include "backend/backends.h"
+
+#define CONFIG_PLATAFORM
+
+#ifdef _def
+#include "backend_def/backends.h"
+#ifdef _rg350
+#include "backend_rg350/backends.h"
+#ifdef _pg2
+#include "backend_pg2/backends.h"
+#endif
+#endif
+#endif
 
 #ifndef PROGNAME
 #define PROGNAME "pwswd"
@@ -18,8 +29,11 @@
 #define EVENT_FILENAME  "/dev/input/event0"
 #endif
 
+#ifdef _def
+#else
 #ifndef JEVENT_FILENAME
 #define JEVENT_FILENAME  "/dev/input/event3"
+#endif
 #endif
 
 #ifndef UINPUT_FILENAME
@@ -45,7 +59,11 @@ int main(int argc, char **argv)
 #ifdef BACKEND_VOLUME
 		  *mixer = NULL, *dac = NULL,
 #endif
+#ifdef _def
+		  *event = NULL, *uinput = NULL;
+#else
 		  *event = NULL, *uinput = NULL, *jevent = NULL;
+#endif
 	int exitcode = EXIT_SUCCESS;
 	size_t i;
 
@@ -97,9 +115,12 @@ int main(int argc, char **argv)
 	if (!event)
 		event = EVENT_FILENAME;
 
+#ifdef _def
+#else
 	if (!jevent)
 		jevent = JEVENT_FILENAME;
-
+#endif
+	
 	if (!uinput)
 		uinput = UINPUT_FILENAME;
 
@@ -116,7 +137,11 @@ int main(int argc, char **argv)
 		fprintf(stderr, "Unable to init volume backend\n");
 #endif
 
+#ifdef _def
+	if (do_listen(event, uinput))
+#else
 	if (do_listen(event, jevent, uinput))
+#endif
 		exitcode = EXIT_FAILURE;
 	deinit();
 	return exitcode;
