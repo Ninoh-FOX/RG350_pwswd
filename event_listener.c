@@ -115,7 +115,7 @@ enum _mode {
 static enum _mode mode = NORMAL;
 
 static int event0 = -1, jevent0 = -1, uinput = -1;
-static bool grabbed, power_button_pressed, is_mouse = false, is_dpad = false; is_noanalog = false;
+static bool grabbed, power_button_pressed, is_mouse = false, is_dpad = false, is_noanalog = false;
 static int epollfd = -1;
 
 static void switchmode(enum _mode new)
@@ -938,6 +938,19 @@ int do_listen(const char *event, const char *jevent, const char *uinput)
 			if (jread && !power_button_pressed && my_jevent.type == EV_ABS) {
 				//fprintf(stderr, "code: %d value: %d\n",my_jevent.code,my_jevent.value);
 				switch(my_jevent.code) {
+					#ifdef _pg2
+					case 0:
+						current_dpad[0] = my_jevent.value < AXIS_ZERO_0 - DEAD_ZONE;
+						current_dpad[1] = my_jevent.value > AXIS_ZERO_0 + DEAD_ZONE;
+						break;
+					case 1:
+						current_dpad[2] = my_jevent.value < AXIS_ZERO_1 - DEAD_ZONE;
+						current_dpad[3] = my_jevent.value > AXIS_ZERO_1 + DEAD_ZONE;
+						break;
+					default:
+						break;
+						
+					#else
 					case 0:
 						current_dpad[0] = my_jevent.value > AXIS_ZERO_0 + DEAD_ZONE;
 						current_dpad[1] = my_jevent.value < AXIS_ZERO_0 - DEAD_ZONE;
@@ -948,6 +961,8 @@ int do_listen(const char *event, const char *jevent, const char *uinput)
 						break;
 					default:
 						break;
+						
+					#endif
 				}
 				int i;
 				for (i = 0; i < 4; i ++) {
